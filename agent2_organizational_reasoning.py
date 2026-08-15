@@ -1,0 +1,332 @@
+"""
+AGENT 2 — Organizational Reasoning Agent
+
+Input:
+    Agent 1's classification + customer name
+
+Process:
+    1. Query Neo4j for organizational relationships
+    2. Query PostgreSQL for historical incidents
+    3. Ask Gemini to reason over the evidence
+
+Output:
+    affected_service
+    responsible_department
+    responsible_employee
+    employee_available
+    historical_similar_incidents
+    is_recurring_issue
+    confidence
+    reason
+
+Run:
+    python agent2_organizational_reasoning.py
+"""
+
+import os
+import json
+import psycopg2
+from dotenv import load_dotenv
+from neo4j import GraphDatabase
+from google import genai
+
+
+# ============================================================
+# LOAD ENVIRONMENT VARIABLES
+# ============================================================
+
+load_dotenv()
+
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL")
+
+NEO4J_URI = os.getenv("NEO4J_URI")
+NEO4J_USERNAME = os.getenv("NEO4J_USERNAME")
+NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD")
+
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+
+# ============================================================
+# VALIDATE CONFIGURATION
+# ============================================================
+
+required_vars = {
+    "GEMINI_API_KEY": GEMINI_API_KEY,
+    "GEMINI_MODEL": GEMINI_MODEL,
+    "NEO4J_URI": NEO4J_URI,
+    "NEO4J_USERNAME": NEO4J_USERNAME,
+    "NEO4J_PASSWORD": NEO4J_PASSWORD,
+    "DATABASE_URL": DATABASE_URL,
+}
+
+missing = [name for name, value in required_vars.items() if not value]
+
+if missing:
+    raise ValueError(
+        f"Missing environment variables: {', '.join(missing)}"
+    )
+
+
+# ============================================================
+# GEMINI CLIENT
+# ============================================================
+
+client = genai.Client(
+    api_key=GEMINI_API_KEY
+)
+
+
+# ============================================================
+# NEO4J — ORGANIZATIONAL EVIDENCE
+# ============================================================
+
+def get_org_evidence(customer_name: str):
+    """
+    Pull the organizational ownership chain from Neo4j.
+
+    Customer
+        ↓ USES
+    Service
+        ↓ OWNS
+    Department
+
+    Employee
+        ↓ OWNS_SERVICE
+    Service
+    """
+
+    driver = GraphDatabase.driver(
+        NEO4J_URI,
+        auth=(NEO4J_USERNAME, NEO4J_PASSWORD)
+    )
+
+    try:
+        with driver.session() as session:
+
+            result = session.run(
+                """
+                MATCH (c:Customer {name: $name})-[:USES]->(s:Service)
+                      <-[:OWNS]-(d:Department)
+
+                MATCH (e:Employee)-[:OWNS_SERVICE]->(s)
+
+                RETURN
+                    s.name AS service,
+                    s.service_id AS service_id,
+                    d.name AS department,
+                    e.name AS employee,
+                    e.availability AS available
+                """,
+                name=customer_name
+            )
+
+            records = [dict(record) for record in result]
+
+            return records
+
+    finally:
+        driver.close()
+
+
+# ============================================================
+# POSTGRESQL — HISTORICAL INCIDENTS
+# ============================================================
+
+def get_historical_incidents(service_id: str):
+
+    conn = psycopg2.connect(DATABASE_URL)
+
+    try:
+        cur = conn.cursor()
+
+        cur.execute(
+            """
+            SELECT
+                incident_id,
+                title
+            FROM incidents
+            WHERE service_id = %s
+            ORDER BY created_at DESC
+            LIMIT 5
+            """,
+            (service_id,)
+        )
+
+        rows = cur.fetchall()
+
+        return [
+            {
+                "incident_id": row[0],
+                "title": row[1]
+            }
+            for row in rows
+        ]
+
+    finally:
+        cur.close()
+        conn.close()
+
+
+# ============================================================
+# GEMINI REASONING PROMPT
+# ============================================================
+
+REASONING_PROMPT = """
+You are an Organizational Reasoning Agent for an IT operations system.
+
+You are given:
+
+1. An incident classification from Agent 1.
+2. Organizational evidence from Neo4j:
+   - affected service
+   - owning department
+   - service owner
+   - employee availability
+3. Historical incidents from PostgreSQL.
+
+Your job is NOT to simply repeat the database information.
+
+You must REASON over the evidence.
+
+Rules:
+
+- Identify the affected service.
+- Identify the department responsible for that service.
+- Identify the registered employee responsible for the service.
+- Check whether that employee is available.
+- If the employee is unavailable, explicitly mention this in the reason.
+- If the employee is unavailable, recommend department-level handling or reassignment.
+- Examine historical incidents.
+- Determine whether the issue appears to be recurring.
+- Use the historical incidents as evidence.
+- Do not invent historical incidents.
+- Do not invent organizational relationships.
+- Confidence must be between 0.0 and 1.0.
+
+Return ONLY valid JSON.
+
+Required JSON structure:
+
+{
+    "affected_service": string,
+    "responsible_department": string,
+    "responsible_employee": string,
+    "employee_available": boolean,
+    "historical_similar_incidents": [string],
+    "is_recurring_issue": boolean,
+    "confidence": number,
+    "reason": string
+}
+"""
+
+
+# ============================================================
+# AGENT 2
+# ============================================================
+
+def reason_about_incident(
+    incident_classification: dict,
+    customer_name: str
+) -> dict:
+
+    # --------------------------------------------------------
+    # STEP 1 — Get Neo4j evidence
+    # --------------------------------------------------------
+
+    evidence = get_org_evidence(customer_name)
+
+    if not evidence:
+        raise ValueError(
+            f"No organizational evidence found for customer: "
+            f"{customer_name}"
+        )
+
+    # For now, use the first matching service.
+    # We can improve service matching later.
+    top_match = evidence[0]
+
+    # --------------------------------------------------------
+    # STEP 2 — Get PostgreSQL historical evidence
+    # --------------------------------------------------------
+
+    history = get_historical_incidents(
+        top_match["service_id"]
+    )
+
+    # --------------------------------------------------------
+    # STEP 3 — Build reasoning prompt
+    # --------------------------------------------------------
+
+    prompt = f"""
+{REASONING_PROMPT}
+
+Customer:
+{customer_name}
+
+Agent 1 Incident Classification:
+{json.dumps(incident_classification, indent=2)}
+
+Neo4j Organizational Evidence:
+{json.dumps(top_match, indent=2)}
+
+PostgreSQL Historical Incidents:
+{json.dumps(history, indent=2)}
+
+Now reason over all the evidence and return ONLY the JSON object.
+"""
+
+    # --------------------------------------------------------
+    # STEP 4 — Ask Gemini
+    # --------------------------------------------------------
+
+    response = client.models.generate_content(
+        model=GEMINI_MODEL,
+        contents=prompt,
+        config={
+            "response_mime_type": "application/json"
+        }
+    )
+
+    # --------------------------------------------------------
+    # STEP 5 — Parse JSON
+    # --------------------------------------------------------
+
+    raw_text = response.text.strip()
+
+    try:
+        return json.loads(raw_text)
+
+    except json.JSONDecodeError:
+
+        print("FAILED TO PARSE MODEL OUTPUT:")
+        print(raw_text)
+
+        raise
+
+
+# ============================================================
+# TEST
+# ============================================================
+
+if __name__ == "__main__":
+
+    # Agent 1's actual output
+    agent1_output = {
+        "incident_type": "Incident",
+        "category": "Payment Failure",
+        "priority": "Critical",
+        "severity": "Critical",
+        "business_impact": "Complete halt of retail transaction processing",
+        "reason": "Total outage of payment processing.",
+        "confidence": 0.95
+    }
+
+    result = reason_about_incident(
+        incident_classification=agent1_output,
+        customer_name="ABC Retail"
+    )
+
+    print("\nAGENT 2 OUTPUT")
+    print("=" * 60)
+    print(json.dumps(result, indent=2))

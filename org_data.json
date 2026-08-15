@@ -1,0 +1,83 @@
+{
+  "departments": [
+    { "department_id": "D1", "department_name": "Backend Engineering" },
+    { "department_id": "D2", "department_name": "Frontend Engineering" },
+    { "department_id": "D3", "department_name": "DevOps" },
+    { "department_id": "D4", "department_name": "Database" },
+    { "department_id": "D5", "department_name": "Customer Support" }
+  ],
+
+  "services": [
+    { "service_id": "S1", "service_name": "Payment Gateway", "department_owner": "D1" },
+    { "service_id": "S2", "service_name": "Authentication Service", "department_owner": "D1" },
+    { "service_id": "S3", "service_name": "Order Management", "department_owner": "D1" },
+    { "service_id": "S4", "service_name": "Inventory Service", "department_owner": "D1" },
+    { "service_id": "S5", "service_name": "Customer Portal", "department_owner": "D2" },
+    { "service_id": "S6", "service_name": "Notification Service", "department_owner": "D2" },
+    { "service_id": "S7", "service_name": "CI/CD Pipeline", "department_owner": "D3" },
+    { "service_id": "S8", "service_name": "API Gateway", "department_owner": "D3" },
+    { "service_id": "S9", "service_name": "Database Service", "department_owner": "D4" },
+    { "service_id": "S10", "service_name": "Reporting Service", "department_owner": "D4" }
+  ],
+
+  "employees": [
+    { "employee_id": "E1", "name": "Rahul", "department": "D1", "primary_service": "S1", "is_primary_owner": true, "availability": true },
+    { "employee_id": "E2", "name": "Karan", "department": "D1", "primary_service": "S1", "is_primary_owner": false, "availability": false },
+    { "employee_id": "E3", "name": "Priya", "department": "D1", "primary_service": "S3", "is_primary_owner": true, "availability": true },
+    { "employee_id": "E4", "name": "Sanjay", "department": "D1", "primary_service": "S2", "is_primary_owner": true, "availability": true },
+    { "employee_id": "E5", "name": "Divya", "department": "D1", "primary_service": "S4", "is_primary_owner": true, "availability": true },
+    { "employee_id": "E6", "name": "Anitha", "department": "D2", "primary_service": "S5", "is_primary_owner": true, "availability": true },
+    { "employee_id": "E7", "name": "Deepa", "department": "D2", "primary_service": "S5", "is_primary_owner": false, "availability": false },
+    { "employee_id": "E8", "name": "Vignesh", "department": "D2", "primary_service": "S6", "is_primary_owner": true, "availability": true },
+    { "employee_id": "E9", "name": "Arun", "department": "D3", "primary_service": "S7", "is_primary_owner": true, "availability": true },
+    { "employee_id": "E10", "name": "Harish", "department": "D3", "primary_service": "S7", "is_primary_owner": false, "availability": true },
+    { "employee_id": "E11", "name": "Naveen", "department": "D3", "primary_service": "S8", "is_primary_owner": true, "availability": true },
+    { "employee_id": "E12", "name": "Meena", "department": "D4", "primary_service": "S9", "is_primary_owner": true, "availability": true },
+    { "employee_id": "E13", "name": "Lakshmi", "department": "D4", "primary_service": "S9", "is_primary_owner": false, "availability": false },
+    { "employee_id": "E14", "name": "Suresh", "department": "D4", "primary_service": "S10", "is_primary_owner": true, "availability": true },
+    { "employee_id": "E15", "name": "Karthik", "department": "D5", "primary_service": null, "is_primary_owner": false, "availability": true },
+    { "employee_id": "E16", "name": "Farha", "department": "D5", "primary_service": null, "is_primary_owner": false, "availability": true },
+    { "employee_id": "E17", "name": "Ibrahim", "department": "D5", "primary_service": null, "is_primary_owner": false, "availability": true },
+    { "employee_id": "E18", "name": "Radha", "department": "D5", "primary_service": null, "is_primary_owner": false, "availability": false }
+  ],
+
+  "customers": [
+    { "customer_id": "C1", "customer_name": "ABC Retail", "uses_services": ["S1", "S5"] },
+    { "customer_id": "C2", "customer_name": "TechNova Inc", "uses_services": ["S8", "S2"] },
+    { "customer_id": "C3", "customer_name": "Global Mart", "uses_services": ["S3", "S4"] },
+    { "customer_id": "C4", "customer_name": "QuickShip Logistics", "uses_services": ["S6", "S9"] },
+    { "customer_id": "C5", "customer_name": "BrightPay Solutions", "uses_services": ["S1"] },
+    { "customer_id": "C6", "customer_name": "Sunrise Foods", "uses_services": ["S5", "S6"] },
+    { "customer_id": "C7", "customer_name": "Vertex Systems", "uses_services": ["S8"] },
+    { "customer_id": "C8", "customer_name": "Nimbus Cloud Co", "uses_services": ["S7", "S9"] },
+    { "customer_id": "C9", "customer_name": "Coastal Traders", "uses_services": ["S3"] }
+  ],
+
+  "historical_incidents": [
+    { "incident_id": "INC-101", "title": "Payment Gateway timeout during checkout", "service_id": "S1", "date": "2026-01-14" },
+    { "incident_id": "INC-102", "title": "ABC Retail unable to complete payments", "service_id": "S1", "date": "2026-01-22" },
+    { "incident_id": "INC-103", "title": "Intermittent 500 errors on Payment Gateway", "service_id": "S1", "date": "2026-02-03" },
+    { "incident_id": "INC-104", "title": "Login failures across multiple accounts", "service_id": "S2", "date": "2026-02-09" },
+    { "incident_id": "INC-105", "title": "Auth token expiry causing repeated logouts", "service_id": "S2", "date": "2026-02-17" },
+    { "incident_id": "INC-106", "title": "Order status not updating after purchase", "service_id": "S3", "date": "2026-02-25" },
+    { "incident_id": "INC-107", "title": "Duplicate orders created on retry", "service_id": "S3", "date": "2026-03-04" },
+    { "incident_id": "INC-108", "title": "Inventory count mismatch after bulk upload", "service_id": "S4", "date": "2026-03-11" },
+    { "incident_id": "INC-109", "title": "Customer Portal not loading on mobile", "service_id": "S5", "date": "2026-03-19" },
+    { "incident_id": "INC-110", "title": "Customer Portal session drops randomly", "service_id": "S5", "date": "2026-03-27" },
+    { "incident_id": "INC-111", "title": "Notification emails delayed by hours", "service_id": "S6", "date": "2026-04-02" },
+    { "incident_id": "INC-112", "title": "SMS notifications not sending", "service_id": "S6", "date": "2026-04-10" },
+    { "incident_id": "INC-113", "title": "CI/CD pipeline failing on deploy step", "service_id": "S7", "date": "2026-04-18" },
+    { "incident_id": "INC-114", "title": "Build queue stuck for over an hour", "service_id": "S7", "date": "2026-04-25" },
+    { "incident_id": "INC-115", "title": "API Gateway returning 502 errors", "service_id": "S8", "date": "2026-05-02" },
+    { "incident_id": "INC-116", "title": "API Gateway rate limiting legitimate traffic", "service_id": "S8", "date": "2026-05-09" },
+    { "incident_id": "INC-117", "title": "Database connection pool exhausted", "service_id": "S9", "date": "2026-05-16" },
+    { "incident_id": "INC-118", "title": "Slow query performance on orders table", "service_id": "S9", "date": "2026-05-23" },
+    { "incident_id": "INC-119", "title": "Reporting Service generating stale data", "service_id": "S10", "date": "2026-05-30" },
+    { "incident_id": "INC-120", "title": "Monthly report export failing silently", "service_id": "S10", "date": "2026-06-06" },
+    { "incident_id": "INC-121", "title": "Payment Gateway down for 20 minutes", "service_id": "S1", "date": "2026-06-14" },
+    { "incident_id": "INC-122", "title": "Suspicious login attempts flagged on Auth Service", "service_id": "S2", "date": "2026-06-21" },
+    { "incident_id": "INC-123", "title": "Order Management API latency spike", "service_id": "S3", "date": "2026-06-28" },
+    { "incident_id": "INC-124", "title": "Customer Portal checkout button unresponsive", "service_id": "S5", "date": "2026-07-05" },
+    { "incident_id": "INC-125", "title": "API Gateway outage affecting three customers", "service_id": "S8", "date": "2026-07-13" }
+  ]
+}
