@@ -25,6 +25,8 @@ Run:
 
 import os
 import json
+import time
+
 import psycopg2
 from dotenv import load_dotenv
 from neo4j import GraphDatabase
@@ -96,8 +98,16 @@ def get_org_evidence(customer_name: str):
     Service
     """
 
+    # Use neo4j+ssc for this environment because the original
+    # neo4j+s connection produced a certificate verification error.
+    neo4j_test_uri = NEO4J_URI.replace(
+        "neo4j+s://",
+        "neo4j+ssc://",
+        1
+    )
+
     driver = GraphDatabase.driver(
-        NEO4J_URI,
+        neo4j_test_uri,
         auth=(NEO4J_USERNAME, NEO4J_PASSWORD)
     )
 
@@ -206,6 +216,13 @@ Rules:
 
 Return ONLY valid JSON.
 
+The response must be syntactically valid JSON.
+Do not use single quotes.
+Do not put unescaped quotation marks inside string values.
+Do not add trailing commas.
+Return exactly one JSON object and nothing else.
+Keep the "reason" field concise, using no more than 2 sentences.
+
 Required JSON structure:
 
 {
@@ -243,7 +260,6 @@ def reason_about_incident(
         )
 
     # For now, use the first matching service.
-    # We can improve service matching later.
     top_match = evidence[0]
 
     # --------------------------------------------------------
@@ -277,32 +293,42 @@ Now reason over all the evidence and return ONLY the JSON object.
 """
 
     # --------------------------------------------------------
-    # STEP 4 — Ask Gemini
+    # STEP 4 + 5 — Ask Gemini and parse JSON
     # --------------------------------------------------------
 
-    response = client.models.generate_content(
-        model=GEMINI_MODEL,
-        contents=prompt,
-        config={
-            "response_mime_type": "application/json"
-        }
-    )
+    max_attempts = 3
 
-    # --------------------------------------------------------
-    # STEP 5 — Parse JSON
-    # --------------------------------------------------------
+    for attempt in range(1, max_attempts + 1):
 
-    raw_text = response.text.strip()
+        response = client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=prompt,
+            config={
+                "response_mime_type": "application/json",
+                "temperature": 0
+            }
+        )
 
-    try:
-        return json.loads(raw_text)
+        raw_text = response.text.strip()
 
-    except json.JSONDecodeError:
+        try:
+            return json.loads(raw_text)
 
-        print("FAILED TO PARSE MODEL OUTPUT:")
-        print(raw_text)
+        except json.JSONDecodeError:
 
-        raise
+            print(
+                f"JSON parsing failed on attempt "
+                f"{attempt}/{max_attempts}"
+            )
+
+            if attempt < max_attempts:
+                time.sleep(1)
+                continue
+
+            print("\nFAILED TO PARSE MODEL OUTPUT:")
+            print(raw_text)
+
+            raise
 
 
 # ============================================================

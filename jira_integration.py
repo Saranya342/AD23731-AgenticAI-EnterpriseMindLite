@@ -21,8 +21,21 @@ PROJECT_KEY = os.getenv("PROJECT_KEY")
 auth = HTTPBasicAuth(EMAIL, API_TOKEN)
 headers = {"Accept": "application/json", "Content-Type": "application/json"}
 
+# Agent 3 outputs priority language like "Critical", "High", "Medium", "Low" —
+# but this Jira site's actual priority scheme (confirmed via
+# check_jira_priorities.py) only has: Highest, High, Medium, Low, Lowest.
+# This maps one to the other so ticket creation never sends an invalid name.
+PRIORITY_MAP = {
+    "Critical": "Highest",
+    "High": "High",
+    "Medium": "Medium",
+    "Low": "Low",
+}
+
 
 def create_ticket(summary: str, description: str, priority: str = "High") -> str:
+    jira_priority_name = PRIORITY_MAP.get(priority, "Medium")
+
     url = f"{JIRA_URL}/rest/api/3/issue"
     payload = {
         "fields": {
@@ -35,7 +48,8 @@ def create_ticket(summary: str, description: str, priority: str = "High") -> str
                     {"type": "paragraph", "content": [{"type": "text", "text": description}]}
                 ]
             },
-            "issuetype": {"name": "Task"}
+            "issuetype": {"name": "Task"},
+            "priority": {"name": jira_priority_name}
         }
     }
     response = requests.post(url, headers=headers, auth=auth, json=payload)

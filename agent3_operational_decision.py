@@ -22,6 +22,8 @@ Run:
 
 import os
 import json
+import time
+
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
@@ -50,7 +52,9 @@ if missing:
     )
 
 
-client = genai.Client(api_key=GEMINI_API_KEY)
+client = genai.Client(
+    api_key=GEMINI_API_KEY
+)
 
 
 # ============================================================
@@ -111,7 +115,20 @@ RULE 7:
 reason must explain the decision using evidence from Agent 1
 and Agent 2. Do not invent facts.
 
-Return ONLY valid JSON.
+JSON REQUIREMENTS:
+
+Return ONLY one valid JSON object.
+
+Do not write any text before the JSON.
+Do not write any text after the JSON.
+Do not use Markdown.
+Do not use code fences.
+Do not use single quotes.
+Do not add trailing commas.
+Do not add comments.
+Do not put unescaped quotation marks inside string values.
+Keep the "reason" field concise, using no more than 2 sentences.
+Keep the "recommended_response" field concise, using no more than 1 sentence.
 
 Required JSON structure:
 
@@ -143,32 +160,80 @@ Agent 1 — Incident Intelligence:
 
 {json.dumps(agent1_output, indent=2)}
 
-
 Agent 2 — Organizational Reasoning:
 
 {json.dumps(agent2_output, indent=2)}
 
-
-Return the JSON now.
+Return exactly one JSON object.
 """
 
-    response = client.models.generate_content(
-        model=GEMINI_MODEL,
-        contents=prompt,
-        config=types.GenerateContentConfig(
-            response_mime_type="application/json"
+    max_attempts = 3
+
+    for attempt in range(1, max_attempts + 1):
+
+        response = client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                temperature=0
+            )
         )
-    )
 
-    raw_text = response.text.strip()
+        raw_text = response.text.strip()
 
-    try:
-        return json.loads(raw_text)
+        try:
+            result = json.loads(raw_text)
 
-    except json.JSONDecodeError:
-        print("\nFAILED TO PARSE MODEL OUTPUT:")
-        print(raw_text)
-        raise
+            # ------------------------------------------------
+            # Validate that the result is actually an object
+            # ------------------------------------------------
+
+            if not isinstance(result, dict):
+                raise ValueError(
+                    "Gemini returned JSON, but it was not a JSON object."
+                )
+
+            # ------------------------------------------------
+            # Validate required fields
+            # ------------------------------------------------
+
+            required_fields = {
+                "create_jira",
+                "jira_priority",
+                "approval_required",
+                "escalation_required",
+                "notify",
+                "recommended_response",
+                "reason"
+            }
+
+            missing_fields = required_fields - result.keys()
+
+            if missing_fields:
+                raise ValueError(
+                    f"Missing Agent 3 fields: "
+                    f"{', '.join(sorted(missing_fields))}"
+                )
+
+            return result
+
+        except (json.JSONDecodeError, ValueError) as error:
+
+            print(
+                f"\nAgent 3 JSON validation failed "
+                f"on attempt {attempt}/{max_attempts}"
+            )
+            print(f"Reason: {error}")
+
+            if attempt < max_attempts:
+                time.sleep(1)
+                continue
+
+            print("\nFAILED TO PARSE MODEL OUTPUT:")
+            print(raw_text)
+
+            raise
 
 
 # ============================================================
