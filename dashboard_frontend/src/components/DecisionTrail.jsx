@@ -13,34 +13,62 @@ export default function DecisionTrail() {
       .finally(() => setLoading(false));
   }, []);
 
-  if (loading) return <p className="status-text">Loading decision trail...</p>;
-  if (error) return <p className="status-text error">Error: {error}</p>;
+  if (loading) {
+    return (
+      <p className="status-text">
+        Loading decision trail...
+      </p>
+    );
+  }
+
+  if (error) {
+    return (
+      <p className="status-text error">
+        Error: {error}
+      </p>
+    );
+  }
 
   return (
     <div>
       <h2>Decision Trail</h2>
+
       <p className="status-text">
-        Full audit log across every incident, most recent first ({decisions.length} entries).
+        Full audit log across every incident ({decisions.length} entries).
       </p>
 
       <table className="data-table">
         <thead>
           <tr>
-            <th>Time</th>
             <th>Incident</th>
             <th>Agent</th>
             <th>Reason</th>
             <th>Confidence</th>
           </tr>
         </thead>
+
         <tbody>
-          {decisions.map((d) => (
-            <tr key={d.decision_id}>
-              <td className="nowrap">{new Date(d.timestamp).toLocaleString()}</td>
-              <td>{d.incident_title || d.incident_id}</td>
-              <td>{d.agent_name}</td>
-              <td className="reason-cell">{d.reason}</td>
-              <td>{d.confidence != null ? d.confidence : "—"}</td>
+          {decisions.map((d, index) => (
+            <tr
+              key={`${d.incident_id}-${d.agent_name}-${index}`}
+            >
+              <td>
+                {d.incident_title || d.incident_id || "—"}
+              </td>
+
+              <td>
+                {d.agent_name || "—"}
+              </td>
+
+              <td className="reason-cell">
+                {d.reason || "—"}
+              </td>
+
+              <td>
+                {d.confidence != null
+                  ? d.confidence
+                  : "—"}
+              </td>
             </tr>
           ))}
         </tbody>

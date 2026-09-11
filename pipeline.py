@@ -1,20 +1,17 @@
 """
 END-TO-END PIPELINE
-Agent 1 -> Agent 2 -> Agent 3 -> Human Approval -> Jira Execution -> Notification
+
+Agent 1 -> Agent 2 -> Agent 3 -> Decision Routing -> Jira Execution -> Notification -> Audit
 
 Flow:
     1. Agent 1 classifies the incident
     2. Agent 2 performs organizational reasoning
     3. Agent 3 decides the operational path
     4. Decisions are saved to PostgreSQL
-    5. If approval is required:
-         - Ask human for approval
-         - If approved -> create Jira
-         - If rejected -> do NOT create Jira
-    6. If approval is NOT required:
-         - Create Jira automatically
-    7. Add comment and move Jira ticket to In Progress
-    8. Send a real email notification about the outcome
+    5. Agent 3 determines one of three paths:
+         - create_jira=False -> Reject -> Audit
+         - approval_required=True -> Human Approval -> Execute/Reject -> Audit
+         - approval_required=False -> Auto Execute -> Jira -> Audit
 """
 
 import os
@@ -48,46 +45,81 @@ if not DATABASE_URL:
 
 
 # ============================================================
+# DATABASE CONNECTION
+# ============================================================
+
+def get_db_connection():
+    return psycopg2.connect(
+        DATABASE_URL,
+        connect_timeout=10
+    )
+
+
+# ============================================================
 # AUDIT LOGGING
 # ============================================================
 
-def log_decision(conn, incident_id, agent_name, decision_dict):
+def log_decision(
+    conn,
+    incident_id,
+    agent_name,
+    decision_dict
+):
+    """
+    Store an agent decision in the decisions table.
+
+    IMPORTANT:
+    'JiraExecutionAgent' is an agent name.
+    It is NOT a database table name.
+    """
 
     cur = conn.cursor()
 
-    cur.execute(
-        """
-        INSERT INTO decisions
-        (
-            incident_id,
-            agent_name,
-            decision,
-            reason,
-            confidence
+    try:
+        cur.execute(
+            """
+            INSERT INTO decisions
+            (
+                incident_id,
+                agent_name,
+                decision,
+                reason,
+                confidence
+            )
+            VALUES (%s, %s, %s, %s, %s);
+            """,
+            (
+                incident_id,
+                agent_name,
+                json.dumps(decision_dict),
+                decision_dict.get("reason", ""),
+                decision_dict.get("confidence", None)
+            )
         )
-        VALUES (%s, %s, %s, %s, %s)
-        """,
-        (
-            incident_id,
-            agent_name,
-            json.dumps(decision_dict),
-            decision_dict.get("reason", ""),
-            decision_dict.get("confidence", None)
-        )
-    )
 
-    conn.commit()
-    cur.close()
+        conn.commit()
+
+    except Exception:
+        conn.rollback()
+        raise
+
+    finally:
+        cur.close()
 
 
 # ============================================================
-# HUMAN APPROVAL
+# LEGACY CLI HUMAN APPROVAL
 # ============================================================
 
 def request_human_approval(agent3_output):
     """
-    Ask a human operator whether the Agent 3 decision
-    should be executed.
+    Legacy CLI approval helper.
+
+    IMPORTANT:
+    The web/API workflow must NOT call this function because
+    input() blocks the HTTP request.
+
+    It is retained only for manual CLI testing.
     """
 
     print("\n" + "=" * 60)
@@ -100,27 +132,158 @@ def request_human_approval(agent3_output):
     print(json.dumps(agent3_output, indent=2))
 
     print("\nPlease choose:")
-
     print("  y = Approve")
     print("  n = Reject")
 
     while True:
 
-        choice = input("\nEnter your choice (y/n): ").strip().lower()
+        choice = input(
+            "\nEnter your choice (y/n): "
+        ).strip().lower()
 
         if choice == "y":
 
-            print("\n[HITL] Human approved the operational decision.")
+            print(
+                "\n[HITL] Human approved "
+                "the operational decision."
+            )
 
             return True
 
         if choice == "n":
 
-            print("\n[HITL] Human rejected the operational decision.")
+            print(
+                "\n[HITL] Human rejected "
+                "the operational decision."
+            )
 
             return False
 
-        print("Invalid choice. Please enter y or n.")
+        print(
+            "Invalid choice. Please enter y or n."
+        )
+
+
+# ============================================================
+# AGENT PROCESSING
+# ============================================================
+
+def process_agents(
+    incident_id,
+    subject,
+    body,
+    customer_name
+):
+    """
+    Run Agent 1 -> Agent 2 -> Agent 3.
+
+    This function does NOT:
+        - ask for terminal approval
+        - create Jira
+        - wait for human input
+
+    This makes it safe to use from the FastAPI
+    background workflow.
+    """
+
+    conn = get_db_connection()
+
+    try:
+
+        print("\n" + "=" * 60)
+        print(
+            f"PROCESSING INCIDENT: {incident_id}"
+        )
+        print("=" * 60)
+
+        # ====================================================
+        # AGENT 1
+        # ====================================================
+
+        print(
+            "\n[AGENT 1] Incident Intelligence"
+        )
+
+        a1 = classify_incident(
+            subject,
+            body,
+            customer_name
+        )
+
+        print(
+            json.dumps(
+                a1,
+                indent=2
+            )
+        )
+
+        log_decision(
+            conn,
+            incident_id,
+            "IncidentIntelligenceAgent",
+            a1
+        )
+
+        # ====================================================
+        # AGENT 2
+        # ====================================================
+
+        print(
+            "\n[AGENT 2] Organizational Reasoning"
+        )
+
+        a2 = reason_about_incident(
+            a1,
+            customer_name,
+            incident_id=incident_id
+        )
+
+        print(
+            json.dumps(
+                a2,
+                indent=2
+            )
+        )
+
+        log_decision(
+            conn,
+            incident_id,
+            "OrganizationalReasoningAgent",
+            a2
+        )
+
+        # ====================================================
+        # AGENT 3
+        # ====================================================
+
+        print(
+            "\n[AGENT 3] Operational Decision"
+        )
+
+        a3 = decide_operational_path(
+            a1,
+            a2
+        )
+
+        print(
+            json.dumps(
+                a3,
+                indent=2
+            )
+        )
+
+        log_decision(
+            conn,
+            incident_id,
+            "OperationalDecisionAgent",
+            a3
+        )
+
+        return a1, a2, a3
+
+    finally:
+
+        conn.close()
 
 
 # ============================================================
@@ -137,10 +300,16 @@ def execute_jira_decision(
     agent3_output
 ):
 
-    create_jira = agent3_output.get(
-        "create_jira",
-        False
+    create_jira = bool(
+        agent3_output.get(
+            "create_jira",
+            False
+        )
     )
+
+    # ========================================================
+    # REJECT / NO JIRA
+    # ========================================================
 
     if not create_jira:
 
@@ -151,16 +320,14 @@ def execute_jira_decision(
 
         return None
 
-
     print(
         "\n[JIRA] Agent 3 decided "
         "to CREATE a Jira ticket."
     )
 
-
-    # --------------------------------------------------------
-    # Prepare information
-    # --------------------------------------------------------
+    # ========================================================
+    # PREPARE INFORMATION
+    # ========================================================
 
     jira_priority = agent3_output.get(
         "jira_priority",
@@ -195,20 +362,18 @@ def execute_jira_decision(
         "Operations Team"
     )
 
-
-    # --------------------------------------------------------
-    # Jira Summary
-    # --------------------------------------------------------
+    # ========================================================
+    # JIRA SUMMARY
+    # ========================================================
 
     summary = (
         f"[{jira_priority}] "
         f"{subject} - {customer_name}"
     )
 
-
-    # --------------------------------------------------------
-    # Jira Description
-    # --------------------------------------------------------
+    # ========================================================
+    # JIRA DESCRIPTION
+    # ========================================================
 
     description = (
         f"Incident ID: {incident_id}\n\n"
@@ -243,10 +408,9 @@ def execute_jira_decision(
         f"{agent3_output.get('recommended_response', '')}"
     )
 
-
-    # --------------------------------------------------------
+    # ========================================================
     # CREATE JIRA TICKET
-    # --------------------------------------------------------
+    # ========================================================
 
     jira_key = create_ticket(
         summary=summary,
@@ -254,25 +418,18 @@ def execute_jira_decision(
         priority=jira_priority
     )
 
+    if not jira_key:
+        raise RuntimeError(
+            "Jira ticket creation returned no Jira ID."
+        )
 
-    # --------------------------------------------------------
-    # LOG TICKET CREATION TO DECISIONS TABLE (audit trail)
-    # --------------------------------------------------------
-
-    log_decision(
-        conn,
-        incident_id,
-        "JiraExecutionAgent",
-        {
-            "ticket_key": jira_key,
-            "reason": f"Jira ticket {jira_key} created and moved to In Progress."
-        }
+    print(
+        f"[JIRA] Created ticket: {jira_key}"
     )
 
-
-    # --------------------------------------------------------
+    # ========================================================
     # ADD COMMENT
-    # --------------------------------------------------------
+    # ========================================================
 
     comment = (
         "Auto-created by Operational Decision Agent.\n"
@@ -288,37 +445,121 @@ def execute_jira_decision(
         comment
     )
 
-
-    # --------------------------------------------------------
+    # ========================================================
     # MOVE TO IN PROGRESS
-    # --------------------------------------------------------
+    # ========================================================
 
     transition_status(
         jira_key,
         "In Progress"
     )
 
+    # ========================================================
+    # SAVE JIRA TICKET TO POSTGRESQL
+    # ========================================================
 
-    # --------------------------------------------------------
-    # SEND NOTIFICATION EMAIL (PHASE 13)
-    # --------------------------------------------------------
-    # Wrapped in try/except so a failed email never crashes an
-    # otherwise-successful Jira ticket creation.
+    jira_insert = """
+        INSERT INTO jira_tickets
+        (
+            jira_id,
+            incident_id,
+            status,
+            priority,
+            assignee,
+            created_at
+        )
+        VALUES
+        (
+            %s,
+            %s,
+            %s,
+            %s,
+            %s,
+            NOW()
+        );
+    """
+
+    cur = conn.cursor()
+
+    try:
+
+        cur.execute(
+            jira_insert,
+            (
+                str(jira_key),
+                incident_id,
+                "In Progress",
+                str(jira_priority),
+                str(employee) if employee else None
+            )
+        )
+
+        conn.commit()
+
+        print(
+            "[DATABASE] Jira ticket saved "
+            "to jira_tickets."
+        )
+
+    except Exception:
+
+        conn.rollback()
+
+        print(
+            "[DATABASE ERROR] Failed to save "
+            "Jira ticket to jira_tickets."
+        )
+
+        raise
+
+    finally:
+
+        cur.close()
+
+    # ========================================================
+    # AUDIT JIRA CREATION
+    # ========================================================
+
+    log_decision(
+        conn,
+        incident_id,
+        "JiraExecutionAgent",
+        {
+            "jira_id": str(jira_key),
+            "ticket_key": str(jira_key),
+            "status": "In Progress",
+            "priority": jira_priority,
+            "assignee": employee,
+            "reason": (
+                f"Jira ticket {jira_key} "
+                f"created and moved to In Progress."
+            )
+        }
+    )
+
+    # ========================================================
+    # SEND NOTIFICATION
+    # ========================================================
 
     email_subject = (
-        f"[EnterpriseMind Lite] {jira_priority} incident "
+        f"[EnterpriseMind Lite] "
+        f"{jira_priority} incident "
         f"— {jira_key} created"
     )
 
     email_body = (
-        f"A new incident has been processed and a Jira ticket created.\n\n"
+        f"A new incident has been processed "
+        f"and a Jira ticket created.\n\n"
+
         f"Incident ID: {incident_id}\n"
         f"Jira Ticket: {jira_key}\n"
         f"Customer: {customer_name}\n"
         f"Priority: {jira_priority}\n\n"
+
         f"Notify: {notify}\n"
         f"Responsible Employee: {employee}\n"
         f"Responsible Department: {department}\n\n"
+
         f"Recommended Response:\n"
         f"{agent3_output.get('recommended_response', '')}"
     )
@@ -333,27 +574,262 @@ def execute_jira_decision(
 
     except Exception as email_error:
 
-        print(f"[EMAIL] Notification failed: {email_error}")
+        print(
+            f"[EMAIL] Notification failed: "
+            f"{email_error}"
+        )
 
-
-    # --------------------------------------------------------
+    # ========================================================
     # FINAL RESULT
-    # --------------------------------------------------------
+    # ========================================================
 
-    print("\n[JIRA] EXECUTION COMPLETE")
+    print(
+        "\n[JIRA] EXECUTION COMPLETE"
+    )
 
-    print(f"[JIRA] Ticket: {jira_key}")
+    print(
+        f"[JIRA] Ticket: {jira_key}"
+    )
 
-    print(f"[JIRA] Priority: {jira_priority}")
+    print(
+        f"[JIRA] Priority: {jira_priority}"
+    )
 
-    print("[JIRA] Status: In Progress")
+    print(
+        "[JIRA] Status: In Progress"
+    )
 
-
-    return jira_key
+    return str(jira_key)
 
 
 # ============================================================
-# END-TO-END PIPELINE
+# EXECUTE APPROVED INCIDENT
+# ============================================================
+
+def execute_approved_incident(
+    incident_id,
+    subject=None,
+    customer_name=None,
+    agent1_output=None,
+    agent2_output=None,
+    agent3_output=None
+):
+    """
+    Execute a previously approved incident.
+
+    The web approval API may provide only incident_id
+    and customer_name.
+
+    In that case, the original incident information
+    and Agent 1/2/3 decisions are recovered from
+    PostgreSQL.
+    """
+
+    conn = get_db_connection()
+
+    try:
+
+        print(
+            f"\n[HITL] Executing approved incident "
+            f"{incident_id}"
+        )
+
+        # ====================================================
+        # RECOVER INCIDENT INFORMATION
+        # ====================================================
+
+        incident_row = None
+
+        if (
+            subject is None
+            or customer_name is None
+        ):
+
+            cur = conn.cursor()
+
+            try:
+
+                cur.execute(
+                    """
+                    SELECT
+                        title,
+                        customer_id
+                    FROM incidents
+                    WHERE incident_id = %s;
+                    """,
+                    (incident_id,)
+                )
+
+                incident_row = cur.fetchone()
+
+            finally:
+
+                cur.close()
+
+        if subject is None:
+
+            if incident_row:
+                subject = incident_row[0]
+
+            else:
+                raise RuntimeError(
+                    f"Incident {incident_id} "
+                    f"was not found."
+                )
+
+        # ====================================================
+        # RECOVER CUSTOMER NAME
+        # ====================================================
+
+        if customer_name is None:
+
+            customer_id = (
+                incident_row[1]
+                if incident_row
+                else None
+            )
+
+            if customer_id:
+
+                cur = conn.cursor()
+
+                try:
+
+                    cur.execute(
+                        """
+                        SELECT customer_name
+                        FROM customers
+                        WHERE customer_id = %s;
+                        """,
+                        (customer_id,)
+                    )
+
+                    customer_row = cur.fetchone()
+
+                finally:
+
+                    cur.close()
+
+                if customer_row:
+
+                    customer_name = (
+                        customer_row[0]
+                    )
+
+        if customer_name is None:
+
+            customer_name = "Unknown Customer"
+
+        # ====================================================
+        # RECOVER AGENT DECISIONS
+        # ====================================================
+
+        if (
+            agent1_output is None
+            or agent2_output is None
+            or agent3_output is None
+        ):
+
+            cur = conn.cursor()
+
+            try:
+
+                cur.execute(
+                    """
+                    SELECT
+                        agent_name,
+                        decision
+                    FROM decisions
+                    WHERE incident_id = %s;
+                    """,
+                    (incident_id,)
+                )
+
+                decision_rows = cur.fetchall()
+
+            finally:
+
+                cur.close()
+
+            for agent_name, decision in decision_rows:
+
+                if isinstance(decision, str):
+
+                    try:
+                        decision = json.loads(
+                            decision
+                        )
+
+                    except Exception:
+
+                        decision = {}
+
+                if not isinstance(
+                    decision,
+                    dict
+                ):
+                    decision = {}
+
+                if (
+                    agent_name
+                    == "IncidentIntelligenceAgent"
+                ):
+                    agent1_output = decision
+
+                elif (
+                    agent_name
+                    == "OrganizationalReasoningAgent"
+                ):
+                    agent2_output = decision
+
+                elif (
+                    agent_name
+                    == "OperationalDecisionAgent"
+                ):
+                    agent3_output = decision
+
+        # ====================================================
+        # VALIDATE RECOVERED DECISIONS
+        # ====================================================
+
+        if agent1_output is None:
+            raise RuntimeError(
+                "Agent 1 decision could not be recovered."
+            )
+
+        if agent2_output is None:
+            raise RuntimeError(
+                "Agent 2 decision could not be recovered."
+            )
+
+        if agent3_output is None:
+            raise RuntimeError(
+                "Agent 3 decision could not be recovered."
+            )
+
+        # ====================================================
+        # EXECUTE JIRA
+        # ====================================================
+
+        jira_key = execute_jira_decision(
+            conn=conn,
+            incident_id=incident_id,
+            subject=subject,
+            customer_name=customer_name,
+            agent1_output=agent1_output,
+            agent2_output=agent2_output,
+            agent3_output=agent3_output
+        )
+
+        return jira_key
+
+    finally:
+
+        conn.close()
+
+
+# ============================================================
+# LEGACY CLI END-TO-END PIPELINE
 # ============================================================
 
 def run_pipeline(
@@ -362,211 +838,178 @@ def run_pipeline(
     body,
     customer_name
 ):
+    """
+    Legacy synchronous CLI pipeline.
 
-    conn = psycopg2.connect(
-        DATABASE_URL
+    Use process_agents() +
+    execute_approved_incident()
+    for the web/API workflow.
+    """
+
+    a1, a2, a3 = process_agents(
+        incident_id=incident_id,
+        subject=subject,
+        body=body,
+        customer_name=customer_name
     )
 
-    try:
-
-        print("\n" + "=" * 60)
-        print(
-            f"PROCESSING INCIDENT: {incident_id}"
+    create_jira = bool(
+        a3.get(
+            "create_jira",
+            False
         )
-        print("=" * 60)
+    )
 
-
-        # ====================================================
-        # AGENT 1
-        # ====================================================
-
-        print(
-            "\n[AGENT 1] Incident Intelligence"
-        )
-
-        a1 = classify_incident(
-            subject,
-            body,
-            customer_name
-        )
-
-        print(
-            json.dumps(
-                a1,
-                indent=2
-            )
-        )
-
-        log_decision(
-            conn,
-            incident_id,
-            "IncidentIntelligenceAgent",
-            a1
-        )
-
-
-        # ====================================================
-        # AGENT 2
-        # ====================================================
-
-        print(
-            "\n[AGENT 2] Organizational Reasoning"
-        )
-
-        a2 = reason_about_incident(
-            a1,
-            customer_name
-        )
-
-        print(
-            json.dumps(
-                a2,
-                indent=2
-            )
-        )
-
-        log_decision(
-            conn,
-            incident_id,
-            "OrganizationalReasoningAgent",
-            a2
-        )
-
-
-        # ====================================================
-        # AGENT 3
-        # ====================================================
-
-        print(
-            "\n[AGENT 3] Operational Decision"
-        )
-
-        a3 = decide_operational_path(
-            a1,
-            a2
-        )
-
-        print(
-            json.dumps(
-                a3,
-                indent=2
-            )
-        )
-
-        log_decision(
-            conn,
-            incident_id,
-            "OperationalDecisionAgent",
-            a3
-        )
-
-
-        # ====================================================
-        # HUMAN APPROVAL / HITL
-        # ====================================================
-
-        approval_required = a3.get(
+    approval_required = bool(
+        a3.get(
             "approval_required",
             False
         )
+    )
 
+    # ========================================================
+    # PATH 1
+    # NO JIRA
+    # ========================================================
 
-        if approval_required:
-
-            approved = request_human_approval(
-                a3
-            )
-
-            if not approved:
-
-                print("\n" + "=" * 60)
-                print("HITL RESULT: REJECTED")
-                print("=" * 60)
-
-                print(
-                    "\n[JIRA] No Jira ticket will be created."
-                )
-
-                print(
-                    "\nPIPELINE STOPPED AFTER HUMAN REJECTION."
-                )
-
-                log_decision(
-                    conn,
-                    incident_id,
-                    "HumanApprovalGate",
-                    {"reason": "Rejected by human reviewer — Jira ticket not created."}
-                )
-
-                return (
-                    a1,
-                    a2,
-                    a3,
-                    None
-                )
-
-        else:
-
-            print(
-                "\n[HITL] Approval not required."
-            )
-
-            print(
-                "[HITL] Continuing automatically."
-            )
-
-
-        # ====================================================
-        # JIRA EXECUTION
-        # ====================================================
+    if not create_jira:
 
         print(
-            "\n[JIRA] Executing Operational Decision"
+            "\n[ROUTE] REJECT -> AUDIT"
         )
 
-        jira_key = execute_jira_decision(
-            conn=conn,
-            incident_id=incident_id,
-            subject=subject,
-            customer_name=customer_name,
-            agent1_output=a1,
-            agent2_output=a2,
-            agent3_output=a3
-        )
+        conn = get_db_connection()
 
+        try:
 
-        # ====================================================
-        # PIPELINE COMPLETE
-        # ====================================================
-
-        print("\n" + "=" * 60)
-        print("PIPELINE COMPLETE")
-        print("=" * 60)
-
-        if jira_key:
-
-            print(
-                f"JIRA TICKET CREATED: {jira_key}"
+            log_decision(
+                conn,
+                incident_id,
+                "HumanApprovalGate",
+                {
+                    "approved": False,
+                    "reason": (
+                        "Agent 3 decided that "
+                        "Jira creation is not required."
+                    )
+                }
             )
 
-        else:
+        finally:
 
-            print(
-                "NO JIRA TICKET CREATED"
-            )
-
+            conn.close()
 
         return (
             a1,
             a2,
             a3,
-            jira_key
+            None
         )
 
+    # ========================================================
+    # PATH 2
+    # HUMAN APPROVAL
+    # ========================================================
 
-    finally:
+    if approval_required:
 
-        conn.close()
+        approved = request_human_approval(
+            a3
+        )
+
+        if not approved:
+
+            conn = get_db_connection()
+
+            try:
+
+                log_decision(
+                    conn,
+                    incident_id,
+                    "HumanApprovalGate",
+                    {
+                        "approved": False,
+                        "reason": (
+                            "Rejected by human reviewer — "
+                            "Jira ticket not created."
+                        )
+                    }
+                )
+
+            finally:
+
+                conn.close()
+
+            print(
+                "\nPIPELINE STOPPED "
+                "AFTER HUMAN REJECTION."
+            )
+
+            return (
+                a1,
+                a2,
+                a3,
+                None
+            )
+
+    else:
+
+        print(
+            "\n[HITL] Approval not required."
+        )
+
+        print(
+            "[HITL] Continuing automatically."
+        )
+
+    # ========================================================
+    # JIRA EXECUTION
+    # ========================================================
+
+    jira_key = execute_approved_incident(
+        incident_id=incident_id,
+        subject=subject,
+        customer_name=customer_name,
+        agent1_output=a1,
+        agent2_output=a2,
+        agent3_output=a3
+    )
+
+    # ========================================================
+    # PIPELINE COMPLETE
+    # ========================================================
+
+    print(
+        "\n" + "=" * 60
+    )
+
+    print(
+        "PIPELINE COMPLETE"
+    )
+
+    print(
+        "=" * 60
+    )
+
+    if jira_key:
+
+        print(
+            f"JIRA TICKET CREATED: "
+            f"{jira_key}"
+        )
+
+    else:
+
+        print(
+            "NO JIRA TICKET CREATED"
+        )
+
+    return (
+        a1,
+        a2,
+        a3,
+        jira_key
+    )
 
 
 # ============================================================

@@ -13,13 +13,23 @@ export default function Insights() {
       .finally(() => setLoading(false));
   }, []);
 
-  if (loading) return <p className="status-text">Loading insights...</p>;
-  if (error) return <p className="status-text error">Error: {error}</p>;
-  if (!data) return null;
+  if (loading) {
+    return <p className="status-text">Loading insights...</p>;
+  }
 
-  const total = data.recurring_issue_rate.total;
-  const recurring = data.recurring_issue_rate.recurring;
-  const recurringPct = total > 0 ? Math.round((recurring / total) * 100) : 0;
+  if (error) {
+    return (
+      <p className="status-text error">
+        Error: {error}
+      </p>
+    );
+  }
+
+  if (!data) {
+    return <p className="status-text">No insights available.</p>;
+  }
+
+  const metrics = data.evaluation_metrics || {};
 
   return (
     <div>
@@ -27,50 +37,81 @@ export default function Insights() {
 
       <div className="insights-grid">
         <div className="insight-card">
-          <h3>Agent Workload</h3>
-          <ul className="insight-list">
-            {data.decisions_per_agent.map((row) => (
-              <li key={row.agent_name}>
-                <span>{row.agent_name}</span>
-                <strong>{row.decision_count}</strong>
-              </li>
-            ))}
-          </ul>
+          <h3>Total Incidents</h3>
+          <p className="big-stat">{data.total_incidents ?? 0}</p>
         </div>
 
         <div className="insight-card">
-          <h3>Incidents per Service</h3>
-          <ul className="insight-list">
-            {data.incidents_per_service.map((row) => (
-              <li key={row.service_name}>
-                <span>{row.service_name}</span>
-                <strong>{row.incident_count}</strong>
-              </li>
-            ))}
-          </ul>
+          <h3>Executed Incidents</h3>
+          <p className="big-stat">{data.executed_incidents ?? 0}</p>
         </div>
 
         <div className="insight-card">
-          <h3>Employee Availability</h3>
-          <ul className="insight-list">
-            {data.employees.map((emp) => (
-              <li key={emp.name}>
-                <span>
-                  {emp.name} ({emp.department_name})
-                </span>
-                <strong className={emp.availability ? "available" : "unavailable"}>
-                  {emp.availability ? "Available" : "Unavailable"}
-                </strong>
-              </li>
-            ))}
-          </ul>
+          <h3>Pending Approvals</h3>
+          <p className="big-stat">{data.pending_approvals ?? 0}</p>
         </div>
 
         <div className="insight-card">
-          <h3>Recurring Issue Rate</h3>
-          <p className="big-stat">{recurringPct}%</p>
+          <h3>Rejected Incidents</h3>
+          <p className="big-stat">{data.rejected_incidents ?? 0}</p>
+        </div>
+
+        <div className="insight-card">
+          <h3>Failed Incidents</h3>
+          <p className="big-stat">{data.failed_incidents ?? 0}</p>
+        </div>
+      </div>
+
+      <h2 style={{ marginTop: "36px" }}>Evaluation Metrics</h2>
+
+      <div className="insights-grid">
+        <div className="insight-card">
+          <h3>Execution Success Rate</h3>
+          <p className="big-stat">
+            {metrics.execution_success_rate ?? 0}%
+          </p>
           <p className="status-text">
-            {recurring} of {total} classified incidents are recurring
+            Executed incidents out of all incidents
+          </p>
+        </div>
+
+        <div className="insight-card">
+          <h3>Approval Acceptance Rate</h3>
+          <p className="big-stat">
+            {metrics.approval_acceptance_rate ?? 0}%
+          </p>
+          <p className="status-text">
+            Approved requests out of resolved approvals
+          </p>
+        </div>
+
+        <div className="insight-card">
+          <h3>Average Agent Confidence</h3>
+          <p className="big-stat">
+            {metrics.average_agent_confidence ?? 0}%
+          </p>
+          <p className="status-text">
+            Based on {metrics.confidence_samples ?? 0} recorded confidence values
+          </p>
+        </div>
+
+        <div className="insight-card">
+          <h3>Rejection Rate</h3>
+          <p className="big-stat">
+            {metrics.rejection_rate ?? 0}%
+          </p>
+          <p className="status-text">
+            Rejected incidents out of all incidents
+          </p>
+        </div>
+
+        <div className="insight-card">
+          <h3>Failure Rate</h3>
+          <p className="big-stat">
+            {metrics.failure_rate ?? 0}%
+          </p>
+          <p className="status-text">
+            Failed incidents out of all incidents
           </p>
         </div>
       </div>

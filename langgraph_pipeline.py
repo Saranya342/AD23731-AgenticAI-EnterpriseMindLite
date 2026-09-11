@@ -82,8 +82,9 @@ def build_graph(conn):
 
         a2 = reason_about_incident(
             state["a1"],
-            state["customer_name"]
-        )
+            state["customer_name"],
+            incident_id=state["incident_id"]
+    )
 
         print(json.dumps(a2, indent=2))
 
