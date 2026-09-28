@@ -1,0 +1,8 @@
+{
+  "tests": 10,
+  "successful": 7,
+  "service_accuracy": 1.0,
+  "department_accuracy": 1.0,
+  "employee_accuracy": 0.14285714285714285,
+  "average_response_time_seconds": 28.463285714285714
+}

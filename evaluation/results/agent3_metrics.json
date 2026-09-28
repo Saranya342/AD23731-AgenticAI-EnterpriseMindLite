@@ -1,0 +1,11 @@
+{
+  "tests": 10,
+  "successful": 7,
+  "jira_decision_accuracy": 1.0,
+  "jira_priority_accuracy": 1.0,
+  "approval_routing_accuracy": 1.0,
+  "escalation_accuracy": 1.0,
+  "requirement_satisfaction_rate": 1.0,
+  "complete_task_success_rate": 1.0,
+  "average_response_time_seconds": 15.95357142857143
+}

@@ -1,0 +1,13 @@
+{
+  "tests": 10,
+  "successful": 10,
+  "priority_accuracy": 0.7,
+  "priority_macro_precision": 0.6666666666666666,
+  "priority_macro_recall": 0.775,
+  "priority_macro_f1": 0.6791666666666667,
+  "severity_accuracy": 0.7,
+  "severity_macro_f1": 0.6791666666666667,
+  "incident_type_exact_accuracy": 1.0,
+  "category_exact_accuracy": 0.2,
+  "average_response_time_seconds": 18.4501
+}

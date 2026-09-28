@@ -1,0 +1,13 @@
+{
+  "agent1_priority_macro_f1": 0.6791666666666667,
+  "agent1_severity_macro_f1": 0.6791666666666667,
+  "agent2_service_accuracy": 1.0,
+  "agent2_department_accuracy": 1.0,
+  "agent2_employee_accuracy": 0.14285714285714285,
+  "agent3_requirement_satisfaction_rate": 1.0,
+  "agent3_complete_task_success_rate": 1.0,
+  "agent3_jira_decision_accuracy": 1.0,
+  "agent3_approval_routing_accuracy": 1.0,
+  "composite_system_score": 0.8930555555555556,
+  "composite_definition": "Mean of Agent 1 priority Macro-F1, Agent 2 service accuracy, and Agent 3 requirement satisfaction rate."
+}

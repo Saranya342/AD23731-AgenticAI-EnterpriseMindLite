@@ -1,0 +1,96 @@
+ENTERPRISEMIND-LITE — COMPLETE PERFORMANCE EVALUATION (10 INCIDENTS)
+
+WHAT THIS PACKAGE EVALUATES
+Agent 1:
+- Priority Accuracy, Macro Precision, Macro Recall, Macro F1
+- Severity Accuracy and Macro F1
+- Incident-type exact accuracy
+- Category exact accuracy
+- Average response time
+
+Agent 2:
+- Affected-service accuracy
+- Responsible-department accuracy
+- Responsible-employee accuracy
+- Average response time
+
+Agent 3:
+- Jira creation decision accuracy
+- Jira priority accuracy
+- Human-approval routing accuracy
+- Escalation accuracy
+- Requirement Satisfaction Rate
+- Complete Task Success Rate
+- Average response time
+
+Overall:
+- Combined report of all metrics
+- Transparent composite system score
+
+IMPORTANT ABOUT GEMINI FREE API
+There are 10 incidents, but a complete isolated evaluation calls:
+Agent 1 = 10 Gemini calls
+Agent 2 = 10 Gemini calls
+Agent 3 = 10 Gemini calls
+Total = approximately 30 model calls, plus Agent 3 RAG embedding/retrieval may use the project's configured services.
+Run one agent at a time if the free quota/rate limit is tight. You do NOT need to run all 30 calls at once.
+
+SETUP
+1. Extract this ZIP.
+2. Copy the extracted `evaluation` folder into your existing EnterpriseMind-Lite project.
+
+Required structure:
+EnterpriseMind-Lite/
+  agent1_incident_intelligence.py
+  agent2_organizational_reasoning.py
+  agent3_operational_decision.py
+  rag_service.py
+  org_data.json
+  .env
+  evaluation/
+    evaluation_test_cases.csv
+    evaluate_agent1.py
+    evaluate_agent2.py
+    evaluate_agent3.py
+    evaluate_overall.py
+    RUN_ALL_EVALUATIONS.bat
+    RUN_INSTRUCTIONS.txt
+
+3. Start/prepare the SAME PostgreSQL and Neo4j databases your project normally uses.
+4. Ensure .env contains the working Gemini, PostgreSQL and Neo4j settings.
+5. Open PowerShell in the EnterpriseMind-Lite root.
+6. Activate your normal virtual environment.
+7. If needed:
+   pip install scikit-learn
+
+RECOMMENDED RUN METHOD FOR FREE API
+Run these separately, allowing time between stages if quota/rate limits occur:
+
+python evaluation/evaluate_agent1.py
+
+python evaluation/evaluate_agent2.py
+
+python evaluation/evaluate_agent3.py
+
+python evaluation/evaluate_overall.py
+
+OR, if quota is sufficient, double-click RUN_ALL_EVALUATIONS.bat / run:
+evaluation\RUN_ALL_EVALUATIONS.bat
+
+RESULTS
+The scripts create evaluation/results/ containing:
+- agent1_predictions.csv
+- agent1_metrics.json
+- agent2_predictions.csv
+- agent2_metrics.json
+- agent3_predictions.csv
+- agent3_metrics.json
+- overall_metrics.json
+
+SEND BACK
+Zip the entire evaluation/results folder and send it to ChatGPT.
+
+METHODOLOGY NOTE
+Agent 2 is tested with ground-truth Agent 1 inputs so Agent 1 mistakes do not unfairly reduce Agent 2's isolated score.
+Agent 3 is tested with ground-truth incident labels plus Agent 2 outputs. Its deterministic rule compliance is checked against the rules already present in agent3_operational_decision.py.
+The composite score is NOT a standard published metric; it is reported transparently as a project summary. The individual metrics should remain the main results in the report.

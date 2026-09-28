@@ -148,3 +148,41 @@ export async function rejectIncident(incidentId) {
 
   return res.json();
 }
+// ============================================================
+// CUSTOMER SERVICE
+// ============================================================
+
+export async function fetchCustomerServiceQueries() {
+  const res = await fetch(
+    `${API_BASE}/api/customer-service`
+  );
+
+  if (!res.ok) {
+    throw new Error(
+      `Failed to fetch customer service queries (${res.status})`
+    );
+  }
+
+  return res.json();
+}
+export async function resolveCustomerServiceQuery(queryId) {
+  const res = await fetch(
+    `${API_BASE}/api/customer-service/${queryId}/resolve`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    }
+  );
+
+  if (!res.ok) {
+    const errorText = await res.text();
+
+    throw new Error(
+      `Failed to resolve customer query ${queryId}: ${errorText}`
+    );
+  }
+
+  return res.json();
+}

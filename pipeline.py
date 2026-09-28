@@ -22,6 +22,7 @@ from dotenv import load_dotenv
 from agent1_incident_intelligence import classify_incident
 from agent2_organizational_reasoning import reason_about_incident
 from agent3_operational_decision import decide_operational_path
+from tool_evaluator import evaluate_tool_results
 
 from jira_integration import (
     create_ticket,
@@ -175,7 +176,7 @@ def process_agents(
     customer_name
 ):
     """
-    Run Agent 1 -> Agent 2 -> Agent 3.
+    Run Agent 1 -> Agent 2 -> RAG-enabled Agent 3 -> diagnostic tools -> Gemini tool evaluation.
 
     This function does NOT:
         - ask for terminal approval
@@ -235,7 +236,9 @@ def process_agents(
         a2 = reason_about_incident(
             a1,
             customer_name,
-            incident_id=incident_id
+            incident_id=incident_id,
+            subject=subject,
+            body=body
         )
 
         print(
@@ -253,16 +256,195 @@ def process_agents(
         )
 
         # ====================================================
-        # AGENT 3
+        # AGENT 3 + RAG
         # ====================================================
 
         print(
             "\n[AGENT 3] Operational Decision"
         )
 
+        # Pass the original incident text as well so the
+        # RAG query has the strongest possible context.
         a3 = decide_operational_path(
             a1,
-            a2
+            a2,
+            subject=subject,
+            body=body
+        )
+
+        print(
+            json.dumps(
+                a3,
+                indent=2
+            )
+        )
+
+        # ====================================================
+        # DIAGNOSTIC TOOLS + GEMINI TOOL EVALUATION
+        # ====================================================
+
+        affected_service = a2.get(
+            "affected_service"
+        )
+
+        tool_evaluation = None
+
+        if affected_service:
+
+            print(
+                "\n[TOOLS] Diagnostic Evaluation"
+            )
+
+            try:
+
+                tool_evaluation = evaluate_tool_results(
+                    affected_service
+                )
+
+                print(
+                    json.dumps(
+                        tool_evaluation,
+                        indent=2
+                    )
+                )
+
+                # Save a separate audit entry for the tool
+                # evaluation so the evidence is visible later.
+                tool_audit = dict(
+                    tool_evaluation
+                )
+
+                tool_audit["reason"] = (
+                    tool_evaluation.get(
+                        "summary",
+                        "Diagnostic tool evaluation completed."
+                    )
+                )
+
+                log_decision(
+                    conn,
+                    incident_id,
+                    "DiagnosticToolEvaluationAgent",
+                    tool_audit
+                )
+
+                # Attach the tool evidence to Agent 3's final
+                # decision so routing and Jira execution can use it.
+                a3["tool_evaluation"] = tool_evaluation
+
+                incident_confirmed = bool(
+                    tool_evaluation.get(
+                        "incident_confirmed",
+                        False
+                    )
+                )
+
+                tool_supports_jira = bool(
+                    tool_evaluation.get(
+                        "tool_evidence_supports_jira",
+                        False
+                    )
+                )
+
+                # ------------------------------------------------
+                # FINAL ROUTING SAFETY RULE
+                #
+                # Agent 3 remains the primary decision-maker.
+                # The tools do NOT create Jira by themselves.
+                #
+                # If Agent 3 wants Jira but the diagnostic
+                # evidence does not confirm/support it, require
+                # human approval instead of auto-executing.
+                # ------------------------------------------------
+
+                if a3.get("create_jira", False):
+
+                    if (
+                        not incident_confirmed
+                        or not tool_supports_jira
+                    ):
+
+                        a3["approval_required"] = True
+
+                        existing_reason = a3.get(
+                            "reason",
+                            ""
+                        )
+
+                        evidence_reason = (
+                            " Diagnostic tool evidence did not "
+                            "fully confirm/support automatic Jira "
+                            "execution, so human approval is required."
+                        )
+
+                        a3["reason"] = (
+                            existing_reason
+                            + evidence_reason
+                        ).strip()
+
+                    else:
+
+                        print(
+                            "[ROUTE] Tool evidence confirms the "
+                            "incident and supports Jira."
+                        )
+
+            except Exception as tool_error:
+
+                print(
+                    f"[TOOLS] Diagnostic evaluation failed: "
+                    f"{tool_error}"
+                )
+
+                # Fail safely. If Agent 3 requested Jira and the
+                # diagnostics could not be evaluated, do not allow
+                # silent automatic execution.
+                if a3.get("create_jira", False):
+
+                    a3["approval_required"] = True
+
+                    existing_reason = a3.get(
+                        "reason",
+                        ""
+                    )
+
+                    a3["reason"] = (
+                        existing_reason
+                        + " Diagnostic evaluation was unavailable, "
+                        "so human approval is required before Jira "
+                        "execution."
+                    ).strip()
+
+                a3["tool_evaluation"] = {
+                    "status": "unavailable",
+                    "error": str(tool_error)
+                }
+
+        else:
+
+            print(
+                "[TOOLS] No affected service was identified. "
+                "Skipping diagnostic tools."
+            )
+
+            a3["tool_evaluation"] = {
+                "status": "skipped",
+                "reason": (
+                    "No affected service was identified."
+                )
+            }
+
+            # If Jira is requested but no service is known,
+            # require a human check before execution.
+            if a3.get("create_jira", False):
+                a3["approval_required"] = True
+
+        # ====================================================
+        # SAVE FINAL AGENT 3 DECISION
+        # ====================================================
+
+        print(
+            "\n[AGENT 3] Final decision after tool evaluation"
         )
 
         print(

@@ -634,7 +634,9 @@ Required JSON structure:
 
 def select_org_match(
     evidence: list,
-    incident_classification: dict
+    incident_classification: dict,
+    subject: str = "",
+    body: str = ""
 ) -> dict:
 
     if not evidence:
@@ -651,6 +653,12 @@ You are identifying the affected service for an IT incident.
 
 Agent 1 classification:
 {json.dumps(incident_classification, indent=2)}
+
+Original incident subject:
+{subject}
+
+Original incident body:
+{body}
 
 Available organizational evidence from Neo4j:
 {json.dumps(evidence, indent=2)}
@@ -710,7 +718,9 @@ Required format:
 def reason_about_incident(
     incident_classification: dict,
     customer_name: str,
-    incident_id: str = None
+    incident_id: str = None,
+    subject: str = "",
+    body: str = ""
 ) -> dict:
 
     # --------------------------------------------------------
@@ -731,7 +741,9 @@ def reason_about_incident(
 
     selected_match = select_org_match(
         evidence,
-        incident_classification
+        incident_classification,
+        subject=subject,
+        body=body
     )
 
     # --------------------------------------------------------

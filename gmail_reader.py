@@ -14,6 +14,7 @@ GMAIL_ADDRESS = os.getenv("GMAIL_ADDRESS")
 GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD")
 
 BACKEND_URL = "http://127.0.0.1:8000/api/incidents"
+CUSTOMER_SERVICE_URL = "http://127.0.0.1:8000/api/customer-service"
 
 
 def decode_text(value):
@@ -171,15 +172,82 @@ def submit_incident_to_backend(
 
     if not customer_id:
         print(
-            "[DETECTION ERROR] Customer could not be detected."
+            "[CUSTOMER SERVICE] Unknown customer detected."
         )
-        return None
+
+        try:
+            response = requests.post(
+                CUSTOMER_SERVICE_URL,
+                json={
+                    "sender_email": sender,
+                    "subject": subject,
+                    "body": body,
+                    "detected_customer_name": None,
+                },
+                timeout=30
+            )
+
+            if response.status_code >= 400:
+                print(
+                    "[CUSTOMER SERVICE ERROR]",
+                    response.status_code,
+                    response.text
+                )
+                return None
+
+            print(
+                "[CUSTOMER SERVICE] Email assigned "
+                "to Customer Service."
+            )
+
+            return response.json()
+
+        except requests.exceptions.RequestException as exc:
+            print(
+                "[CUSTOMER SERVICE ERROR]",
+                str(exc)
+            )
+            return None
 
     if not service_id:
         print(
-            "[DETECTION ERROR] Service could not be detected."
+            "[CUSTOMER SERVICE] Known customer, "
+            "but service could not be detected."
         )
-        return None
+
+        try:
+            response = requests.post(
+                CUSTOMER_SERVICE_URL,
+                json={
+                    "sender_email": sender,
+                    "subject": subject,
+                    "body": body,
+                    "detected_customer_name": customer_name,
+                },
+                timeout=30
+            )
+
+            if response.status_code >= 400:
+                print(
+                    "[CUSTOMER SERVICE ERROR]",
+                    response.status_code,
+                    response.text
+                )
+                return None
+
+            print(
+                "[CUSTOMER SERVICE] Email assigned "
+                "for service identification."
+            )
+
+            return response.json()
+
+        except requests.exceptions.RequestException as exc:
+            print(
+                "[CUSTOMER SERVICE ERROR]",
+                str(exc)
+            )
+            return None
 
     payload = {
         "subject": subject,

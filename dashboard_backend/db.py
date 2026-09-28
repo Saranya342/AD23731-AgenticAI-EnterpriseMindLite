@@ -152,3 +152,31 @@ def fetch_one(query, params=None):
 
     finally:
         conn.close()
+# ---------------------------------------------------------
+# Execute INSERT / UPDATE / DELETE
+# ---------------------------------------------------------
+
+def execute_query(query, params=None):
+    """
+    Execute INSERT, UPDATE, or DELETE query.
+    """
+
+    conn = get_connection()
+
+    try:
+        cur = conn.cursor()
+
+        cur.execute("SET statement_timeout = 15000")
+
+        cur.execute(query, params or ())
+
+        conn.commit()
+
+        cur.close()
+
+    except Exception:
+        conn.rollback()
+        raise
+
+    finally:
+        conn.close()

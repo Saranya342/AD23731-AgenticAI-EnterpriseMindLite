@@ -1,0 +1,11 @@
+test_id,customer_name,subject,body,expected_incident_type,expected_category,expected_priority,expected_severity,expected_service,expected_department,expected_employee
+T01,ABC Retail,Payment question from one user,One customer reports a failed checkout payment; other customers can pay normally.,Incident,Payment Failure,Medium,Medium,Payment Gateway,Backend Engineering,Rahul
+T02,TechNova Inc,Login failures across company,Most employees cannot authenticate and work is blocked.,Incident,Auth Issue,High,High,Authentication Service,Backend Engineering,Sanjay
+T03,Global Mart,Orders not updating,New orders are being created but order status is not updating for many users.,Incident,Order Issue,High,High,Order Management,Backend Engineering,Priya
+T04,Global Mart,Inventory count mismatch,"Inventory quantities are incorrect after a bulk update, but ordering remains available.",Incident,Inventory Issue,Medium,Medium,Inventory Service,Backend Engineering,Divya
+T05,Sunrise Foods,Customer portal unavailable,The customer portal is unreachable for all customers.,Incident,Service Outage,Critical,Critical,Customer Portal,Frontend Engineering,Anitha
+T06,QuickShip Logistics,Notifications delayed,"Email and SMS notifications are delayed for many customers, but core transactions continue.",Incident,Notification Issue,High,High,Notification Service,Frontend Engineering,Vignesh
+T07,Nimbus Cloud Co,Deployment pipeline failing,The production deployment pipeline fails at the deploy stage and releases are blocked.,Incident,Deployment Issue,High,High,CI/CD Pipeline,DevOps,Arun
+T08,Vertex Systems,API gateway outage,The production API gateway is unavailable and all customer API requests are failing.,Incident,API Outage,Critical,Critical,API Gateway,DevOps,Naveen
+T09,QuickShip Logistics,Database connectivity issue,"Applications are intermittently losing database connections, causing repeated transaction errors.",Incident,Database Issue,High,High,Database Service,Database,Meena
+T10,ABC Retail,Portal page cosmetic issue,A small alignment issue appears on one customer portal page; all functions still work.,Incident,User Interface Issue,Low,Low,Customer Portal,Frontend Engineering,Anitha

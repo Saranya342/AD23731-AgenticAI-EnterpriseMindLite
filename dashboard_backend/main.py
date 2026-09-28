@@ -10,6 +10,7 @@ import json
 from fastapi import FastAPI, HTTPException, UploadFile, File, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+import psycopg2
 
 from db import fetch_all, fetch_one, DATABASE_URL
 
@@ -1961,3 +1962,213 @@ if __name__ == "__main__":
         port=8000,
         reload=True,
     )
+
+@app.post("/api/customer-service")
+def create_customer_service_query(payload: dict):
+    """
+    Store emails from unknown/new customers
+    for Customer Service investigation.
+    """
+
+    sender_email = payload.get("sender_email")
+    subject = payload.get("subject")
+    body = payload.get("body")
+    detected_customer_name = payload.get("detected_customer_name")
+
+    if not subject or not body:
+        raise HTTPException(
+            status_code=400,
+            detail="Subject and body are required"
+        )
+
+    try:
+        conn = psycopg2.connect(DATABASE_URL)
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            INSERT INTO customer_service_queries
+            (
+                sender_email,
+                subject,
+                body,
+                detected_customer_name,
+                query_type,
+                assigned_team,
+                status
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            RETURNING query_id;
+            """,
+            (
+                sender_email,
+                subject,
+                body,
+                detected_customer_name,
+                "UNKNOWN_CUSTOMER",
+                "Customer Service",
+                "pending",
+            ),
+        )
+
+        query_id = cursor.fetchone()[0]
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        return {
+            "message": "Email assigned to Customer Service",
+            "query_id": query_id,
+            "assigned_team": "Customer Service",
+            "status": "pending",
+        }
+
+    except Exception as exc:
+        print(
+            "[CUSTOMER SERVICE ERROR]",
+            str(exc)
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(exc)
+
+        )
+@app.get("/api/customer-service")
+def get_customer_service_queries():
+    """
+    Return Customer Service queries for the dashboard.
+    """
+
+    try:
+        rows = fetch_all(
+            """
+            SELECT
+                query_id,
+                sender_email,
+                subject,
+                body,
+                detected_customer_name,
+                query_type,
+                assigned_team,
+                status,
+                created_at,
+                resolved_at
+            FROM customer_service_queries
+            ORDER BY created_at DESC;
+            """
+        )
+
+        return rows
+
+    except Exception as exc:
+        print(
+            "[CUSTOMER SERVICE ERROR]",
+            str(exc)
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(exc)
+        )
+
+# ============================================================
+# RESOLVE CUSTOMER SERVICE QUERY
+# ============================================================
+
+@app.post("/api/customer-service/{query_id}/resolve")
+def resolve_customer_service_query(query_id: int):
+    """
+    Mark a Customer Service query as resolved.
+    """
+
+    conn = None
+    cursor = None
+
+    try:
+        conn = psycopg2.connect(DATABASE_URL)
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            UPDATE customer_service_queries
+            SET
+                status = 'resolved',
+                resolved_at = NOW()
+            WHERE query_id = %s
+              AND status <> 'resolved'
+            RETURNING
+                query_id,
+                status,
+                resolved_at;
+            """,
+            (query_id,),
+        )
+
+        row = cursor.fetchone()
+
+        if not row:
+            cursor.execute(
+                """
+                SELECT
+                    query_id,
+                    status,
+                    resolved_at
+                FROM customer_service_queries
+                WHERE query_id = %s;
+                """,
+                (query_id,),
+            )
+
+            existing = cursor.fetchone()
+
+            if not existing:
+                conn.rollback()
+                raise HTTPException(
+                    status_code=404,
+                    detail="Customer Service query not found.",
+                )
+
+            conn.commit()
+
+            return {
+                "query_id": existing[0],
+                "status": existing[1],
+                "resolved_at": safe_json(existing[2]),
+                "message": "Customer Service query is already resolved.",
+            }
+
+        conn.commit()
+
+        return {
+            "query_id": row[0],
+            "status": row[1],
+            "resolved_at": safe_json(row[2]),
+            "message": "Customer Service query resolved successfully.",
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception as exc:
+        if conn:
+            conn.rollback()
+
+        print(
+            "[CUSTOMER SERVICE RESOLVE ERROR]",
+            str(exc),
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(exc),
+        )
+
+    finally:
+        if cursor:
+            cursor.close()
+
+        if conn:
+            conn.close()
+

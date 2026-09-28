@@ -1,376 +1,108 @@
 import { useEffect, useState } from "react";
 import { fetchIncidentDetail } from "../api";
 
+function parseDecision(value) {
+  if (typeof value !== "string") return value;
+  try { return JSON.parse(value); } catch { return value; }
+}
+
+function BoolBadge({ value }) {
+  const yes = value === true;
+  return <span className={`evidence-pill ${yes ? "positive" : "neutral"}`}>{value == null ? "Unknown" : yes ? "Yes" : "No"}</span>;
+}
+
+function ToolEvidence({ evaluation }) {
+  if (!evaluation || typeof evaluation !== "object") return null;
+  const tools = Array.isArray(evaluation.tool_results) ? evaluation.tool_results : [];
+  return (
+    <section className="evidence-panel">
+      <div className="section-heading-row">
+        <div><span className="eyebrow">Tool-augmented validation</span><h3>Diagnostic Evidence</h3></div>
+        <span className={`risk-badge risk-${String(evaluation.technical_risk || "unknown").toLowerCase()}`}>{evaluation.technical_risk || "Unknown"} risk</span>
+      </div>
+      <div className="evidence-summary-grid">
+        <div><span>Incident confirmed</span><BoolBadge value={evaluation.incident_confirmed} /></div>
+        <div><span>Evidence supports Jira</span><BoolBadge value={evaluation.tool_evidence_supports_jira} /></div>
+      </div>
+      {evaluation.summary && <p className="evidence-summary">{evaluation.summary}</p>}
+      {tools.length > 0 && <div className="tool-grid">{tools.map((tool, index) => (
+        <article className="tool-card" key={`${tool.tool}-${index}`}>
+          <div className="tool-card-head"><strong>{String(tool.tool || "Diagnostic").replaceAll("_", " ")}</strong><span className="source-badge">{tool.source || "source"}</span></div>
+          <p>{tool.message || (tool.logs?.length ? `${tool.logs.length} recent log entries` : "Diagnostic completed.")}</p>
+          {tool.status && <div className="tool-meta">Status <strong>{tool.status}</strong></div>}
+          {tool.connected != null && <div className="tool-meta">Connected <strong>{String(tool.connected)}</strong></div>}
+          {tool.response_time_ms != null && <div className="tool-meta">Response <strong>{tool.response_time_ms} ms</strong></div>}
+          {tool.latency_ms != null && <div className="tool-meta">Latency <strong>{tool.latency_ms} ms</strong></div>}
+          {tool.logs?.length > 0 && <ul className="log-list">{tool.logs.map((log, i) => <li key={i}><b>{log.level || "LOG"}</b> {log.message}</li>)}</ul>}
+        </article>
+      ))}</div>}
+      {tools.some((tool) => tool.source === "demo") && <p className="demo-note">Diagnostic source: demo/simulated checks for project demonstration.</p>}
+    </section>
+  );
+}
+
+function RagEvidence({ documents }) {
+  if (!Array.isArray(documents) || documents.length === 0) return null;
+  return (
+    <section className="evidence-panel">
+      <div className="section-heading-row"><div><span className="eyebrow">Retrieval-augmented reasoning</span><h3>Retrieved Knowledge</h3></div><span className="count-badge">{documents.length} document{documents.length === 1 ? "" : "s"}</span></div>
+      <div className="rag-list">{documents.map((doc, index) => (
+        <article className="rag-card" key={doc.id || index}>
+          <div><strong>{doc.title || "Knowledge document"}</strong><p>{doc.document_type || "Document"} · {doc.service || "General"}</p></div>
+          {doc.similarity != null && <span className="similarity">{Math.round(Number(doc.similarity) * 100)}% match</span>}
+        </article>
+      ))}</div>
+    </section>
+  );
+}
+
 function AgentDecisionCard({ decision }) {
-  let parsedDecision = decision.decision;
-
-  // Backend may return decision as a JSON string.
-  if (typeof parsedDecision === "string") {
-    try {
-      parsedDecision = JSON.parse(parsedDecision);
-    } catch {
-      // Keep original string if it is not valid JSON.
-    }
-  }
-
-  const isObject =
-    typeof parsedDecision === "object" &&
-    parsedDecision !== null;
-
+  const parsedDecision = parseDecision(decision.decision);
+  const isObject = typeof parsedDecision === "object" && parsedDecision !== null;
   return (
     <div className="decision-card">
-      <div className="decision-card-header">
-        <strong>{decision.agent_name}</strong>
-
-        {decision.timestamp && (
-          <span className="timestamp">
-            {new Date(decision.timestamp).toLocaleString()}
-          </span>
-        )}
-      </div>
-
-      {decision.reason && (
-        <p className="decision-reason">
-          {decision.reason}
-        </p>
-      )}
-
-      {decision.confidence != null && (
-        <p className="confidence-line">
-          Confidence:{" "}
-          <strong>{decision.confidence}</strong>
-        </p>
-      )}
-
-      {isObject && (
-        <details>
-          <summary>View full AI output</summary>
-          <pre>
-            {JSON.stringify(parsedDecision, null, 2)}
-          </pre>
-        </details>
-      )}
-
-      {!isObject && parsedDecision && (
-        <details>
-          <summary>View full AI output</summary>
-          <pre>{String(parsedDecision)}</pre>
-        </details>
-      )}
+      <div className="decision-card-header"><strong>{decision.agent_name}</strong>{decision.timestamp && <span className="timestamp">{new Date(decision.timestamp).toLocaleString()}</span>}</div>
+      {decision.reason && <p className="decision-reason">{decision.reason}</p>}
+      {decision.confidence != null && <p className="confidence-line">Confidence <strong>{decision.confidence}</strong></p>}
+      {isObject && <><RagEvidence documents={parsedDecision.rag_documents} /><ToolEvidence evaluation={parsedDecision.tool_evaluation} /></>}
+      {parsedDecision && <details><summary>View full decision output</summary><pre>{isObject ? JSON.stringify(parsedDecision, null, 2) : String(parsedDecision)}</pre></details>}
     </div>
   );
 }
 
-export default function IncidentDetail({
-  incidentId,
-  onBack,
-}) {
+export default function IncidentDetail({ incidentId, onBack }) {
   const [incident, setIncident] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    setLoading(true);
-    setError(null);
-
-    fetchIncidentDetail(incidentId)
-      .then((data) => {
-        setIncident(data);
-      })
-      .catch((err) => {
-        console.error(
-          "Failed to load incident detail:",
-          err
-        );
-
-        setError(
-          err?.message ||
-            "Failed to load incident details."
-        );
-      })
-      .finally(() => {
-        setLoading(false);
-      });
+    setLoading(true); setError(null);
+    fetchIncidentDetail(incidentId).then(setIncident).catch((err) => setError(err?.message || "Failed to load incident details.")).finally(() => setLoading(false));
   }, [incidentId]);
 
-  if (loading) {
-    return (
-      <p className="status-text">
-        Loading incident...
-      </p>
-    );
-  }
-
-  if (error) {
-    return (
-      <p className="status-text error">
-        Error: {error}
-      </p>
-    );
-  }
-
-  if (!incident) {
-    return (
-      <p className="status-text">
-        Incident not found.
-      </p>
-    );
-  }
+  if (loading) return <p className="status-text">Loading incident...</p>;
+  if (error) return <p className="status-text error">Error: {error}</p>;
+  if (!incident) return <p className="status-text">Incident not found.</p>;
 
   const approval = incident.approval;
+  const operational = incident.decisions?.map((d) => ({...d, parsed: parseDecision(d.decision)})).find((d) => d.agent_name === "OperationalDecisionAgent");
+  const op = operational?.parsed && typeof operational.parsed === "object" ? operational.parsed : null;
 
-  return (
-    <div>
-      <button
-        className="back-button"
-        onClick={onBack}
-      >
-        &larr; Back to Overview
-      </button>
-
-      <h2>{incident.title}</h2>
-
-      <p className="incident-meta">
-        <strong>
-          {incident.incident_id}
-        </strong>{" "}
-        &middot;{" "}
-        {incident.customer_name ||
-          "Unknown customer"}{" "}
-        &middot;{" "}
-        {incident.service_name ||
-          "Unknown service"}
-      </p>
-
-      <p className="incident-meta">
-        Priority:{" "}
-        <strong>
-          {incident.priority || "—"}
-        </strong>{" "}
-        &middot; Severity:{" "}
-        <strong>
-          {incident.severity || "—"}
-        </strong>{" "}
-        &middot; Status:{" "}
-        <strong>
-          {incident.status || "—"}
-        </strong>
-      </p>
-
-      {incident.description && (
-        <div
-          style={{
-            marginTop: "20px",
-            marginBottom: "20px",
-          }}
-        >
-          <h3>Description</h3>
-
-          <p>
-            {incident.description}
-          </p>
-        </div>
-      )}
-
-      {incident.jira_id && (
-        <p className="jira-badge">
-          Jira Ticket:{" "}
-          <strong>
-            {incident.jira_id}
-          </strong>
-        </p>
-      )}
-
-      {approval && (
-        <div
-          className="approval-card"
-          style={{
-            marginTop: "24px",
-            marginBottom: "24px",
-            padding: "20px",
-            border: "1px solid #e5e7eb",
-            borderRadius: "10px",
-            background: "#ffffff",
-          }}
-        >
-          <h3
-            style={{
-              marginTop: 0,
-            }}
-          >
-            Human Approval
-          </h3>
-
-          <p>
-            <strong>
-              Approval Status:
-            </strong>{" "}
-            {approval.status || "Unknown"}
-          </p>
-
-          <p>
-            <strong>
-              Reviewer:
-            </strong>{" "}
-            {approval.reviewer || "—"}
-          </p>
-
-          {approval.created_at && (
-            <p>
-              <strong>
-                Approval Requested:
-              </strong>{" "}
-              {new Date(
-                approval.created_at
-              ).toLocaleString()}
-            </p>
-          )}
-
-          {approval.resolved_at && (
-            <p>
-              <strong>
-                Approval Resolved:
-              </strong>{" "}
-              {new Date(
-                approval.resolved_at
-              ).toLocaleString()}
-            </p>
-          )}
-
-          {approval.decision_payload && (
-            <div
-              style={{
-                marginTop: "16px",
-              }}
-            >
-              <h4>
-                Approved Operational Decision
-              </h4>
-
-              <p>
-                <strong>
-                  Create Jira:
-                </strong>{" "}
-                {String(
-                  approval.decision_payload
-                    .create_jira ??
-                    "Unknown"
-                )}
-              </p>
-
-              <p>
-                <strong>
-                  Jira Priority:
-                </strong>{" "}
-                {approval.decision_payload
-                  .jira_priority ||
-                  "Unknown"}
-              </p>
-
-              <p>
-                <strong>
-                  Escalation Required:
-                </strong>{" "}
-                {String(
-                  approval.decision_payload
-                    .escalation_required ??
-                    "Unknown"
-                )}
-              </p>
-
-              <p>
-                <strong>
-                  Notify:
-                </strong>{" "}
-                {approval.decision_payload
-                  .notify ||
-                  "Unknown"}
-              </p>
-
-              {approval.decision_payload
-                .recommended_response && (
-                <p>
-                  <strong>
-                    Recommended Response:
-                  </strong>
-                  <br />
-                  {
-                    approval
-                      .decision_payload
-                      .recommended_response
-                  }
-                </p>
-              )}
-
-              {approval.decision_payload
-                .reason && (
-                <p>
-                  <strong>
-                    Approval Reason:
-                  </strong>
-                  <br />
-                  {
-                    approval
-                      .decision_payload
-                      .reason
-                  }
-                </p>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
-      {!approval &&
-        incident.status ===
-          "pending_approval" && (
-          <div
-            style={{
-              marginTop: "24px",
-              marginBottom: "24px",
-              padding: "20px",
-              border:
-                "1px solid #e5e7eb",
-              borderRadius: "10px",
-            }}
-          >
-            <h3>
-              Human Approval
-            </h3>
-
-            <p>
-              This incident is waiting
-              for human approval.
-            </p>
-          </div>
-        )}
-
-      <h3>
-        AI Reasoning Timeline
-      </h3>
-
-      <div className="decision-timeline">
-        {(!incident.decisions ||
-          incident.decisions.length ===
-            0) && (
-          <p className="status-text">
-            No decisions logged yet for
-            this incident.
-          </p>
-        )}
-
-        {incident.decisions?.map(
-          (decision, index) => (
-            <AgentDecisionCard
-              key={
-                decision.decision_id ||
-                `${decision.agent_name}-${index}`
-              }
-              decision={decision}
-            />
-          )
-        )}
-      </div>
+  return <div className="page-stack">
+    <button className="back-button" onClick={onBack}>← Back to overview</button>
+    <section className="incident-hero">
+      <div><span className="eyebrow">Incident detail</span><h2>{incident.title}</h2><p className="incident-meta"><strong>{incident.incident_id}</strong> · {incident.customer_name || "Unknown customer"} · {incident.service_name || "Unknown service"}</p></div>
+      <div className="hero-badges"><span className="badge badge-outline">{incident.priority || "No priority"}</span><span className="badge badge-outline">{incident.status || "Unknown"}</span></div>
+    </section>
+    <div className="summary-grid">
+      <div className="summary-card"><span>Priority</span><strong>{incident.priority || "—"}</strong></div>
+      <div className="summary-card"><span>Severity</span><strong>{incident.severity || "—"}</strong></div>
+      <div className="summary-card"><span>Jira</span><strong>{incident.jira_id || "Not created"}</strong></div>
+      <div className="summary-card"><span>Approval</span><strong>{approval?.status || (incident.status === "pending_approval" ? "PENDING" : "Not required")}</strong></div>
     </div>
-  );
+    {incident.description && <section className="content-panel"><h3>Description</h3><p>{incident.description}</p></section>}
+    {op && <><RagEvidence documents={op.rag_documents} /><ToolEvidence evaluation={op.tool_evaluation} /></>}
+    {approval && <section className="content-panel"><div className="section-heading-row"><div><span className="eyebrow">Human-in-the-loop</span><h3>Approval Record</h3></div><span className="approval-status-badge">{approval.status || "Unknown"}</span></div><div className="approval-meta-grid"><p><span>Reviewer</span><strong>{approval.reviewer || "—"}</strong></p><p><span>Requested</span><strong>{approval.created_at ? new Date(approval.created_at).toLocaleString() : "—"}</strong></p><p><span>Resolved</span><strong>{approval.resolved_at ? new Date(approval.resolved_at).toLocaleString() : "—"}</strong></p></div></section>}
+    <section><div className="section-heading-row"><div><span className="eyebrow">Audit trail</span><h3>AI Reasoning Timeline</h3></div><span className="count-badge">{incident.decisions?.length || 0} entries</span></div><div className="decision-timeline">{(!incident.decisions || incident.decisions.length === 0) ? <p className="status-text">No decisions logged yet.</p> : incident.decisions.map((decision, index) => <AgentDecisionCard key={decision.decision_id || `${decision.agent_name}-${index}`} decision={decision} />)}</div></section>
+  </div>;
 }

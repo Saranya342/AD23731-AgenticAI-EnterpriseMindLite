@@ -1,0 +1,11 @@
+test_id,customer_name,subject,body,expected_incident_type,expected_category,expected_priority,expected_severity
+T01,Northwind Retail,Password reset request,One employee forgot their password and needs a reset. Other users can sign in normally.,Customer Request,Auth Issue,Low,Low
+T02,BlueSky Ltd,Billing invoice copy,Please send a copy of last month's invoice. There is no service interruption.,Customer Request,Billing Query,Low,Low
+T11,Northwind Retail,Single user cannot login,One employee receives an invalid-session error when logging in. Other employees can access the system.,Incident,Auth Issue,Medium,Medium
+T12,BlueSky Ltd,Payment retry needed,"One customer's card payment failed twice, but other payments are processing successfully.",Incident,Payment Failure,Medium,Medium
+T13,Contoso,Dashboard slow for one team,A five-person analytics team reports dashboard pages taking 20 seconds to load; other departments are normal.,Incident,Performance Issue,Medium,Medium
+T21,Northwind Retail,Checkout failures affecting many customers,"A large number of customers cannot complete checkout. Some transactions still succeed, but revenue is being affected.",Incident,Payment Failure,High,High
+T22,BlueSky Ltd,Authentication outage for department,"Most employees in the finance department cannot log in, blocking their normal work.",Incident,Auth Issue,High,High
+T23,Contoso,Major performance degradation,"The customer portal is extremely slow for users across multiple regions, although it remains reachable.",Incident,Performance Issue,High,High
+T31,Northwind Retail,Payment platform completely unavailable,No customers can process payments in production. All checkout transactions are failing and revenue is immediately impacted.,Incident,Payment Failure,Critical,Critical
+T32,BlueSky Ltd,Company-wide authentication outage,All employees and customers are unable to sign in to the production platform.,Incident,Auth Issue,Critical,Critical
