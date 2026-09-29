@@ -5,3 +5,4 @@ neo4j
 psycopg2-binary
 python-dotenv
 requests
+python-multipart
