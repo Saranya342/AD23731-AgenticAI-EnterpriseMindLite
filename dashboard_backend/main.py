@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import psycopg2
 
-from db import fetch_all, fetch_one, DATABASE_URL
+from .db import fetch_all, fetch_one, DATABASE_URL
 
 import sys
 from pathlib import Path
